@@ -14,6 +14,7 @@ using System.Drawing.Text;
 using System.IO;
 using System.Linq;
 using System.Media;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -49,11 +50,53 @@ namespace osu_trainer
         private bool? gameLoaded = null;
         private bool mapSelectScreen = false;
 
+        private static readonly string[] RecommendationTags =
+        {
+            "tech - slider tech",
+            "tech - mech tech",
+            "tech - cutstreams",
+            "reading - density",
+            "reading - overlap",
+            "aim - sharp",
+            "aim - awkward",
+            "finger control - burst spam",
+            "finger control - complex rhythm",
+            "alt - flow",
+            "alt - snap",
+            "streams",
+            "stamina",
+            "aim control",
+            "precision",
+            "speed",
+            "old-style",
+            "swing"
+        };
+
+        private readonly HashSet<string> selectedRecommendationTags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private readonly HashSet<string> selectedRecommendationDifficulties = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private List<RecommendationDifficultyOption> recommendationDifficultyOptions = new List<RecommendationDifficultyOption>();
+
+        private TextBox tagSearchTextBox;
+        private CheckedListBox tagCheckedListBox;
+        private ComboBox modsComboBox;
+        private CheckedListBox difficultyCheckedListBox;
+        private TextBox recommendationOutputTextBox;
+        private Button copyRecommendationButton;
+        private Button saveRecommendationButton;
+        private Label recommendationTagsLabel;
+        private Label recommendationModsLabel;
+        private Label recommendationDifficultiesLabel;
+        private Label recommendationOutputLabel;
+        private Panel recommendationMainPanel;
+        private const string RecommendationAppName = "osu-map-recs";
+
         public MainForm()
         {
             Directory.SetCurrentDirectory(Path.GetDirectoryName(System.Reflection.Assembly.GetExecutingAssembly().Location));
             InitializeComponent();
             Height = 493;
+            Text = RecommendationAppName;
+            InitializeRecommendationUi();
 
             // Read version number from version.txt
             try
@@ -65,7 +108,7 @@ namespace osu_trainer
                     string value = line.Split(':')[1].Trim();
                     if (attribute == "current version")
                     {
-                        this.Text = $"osu trainer {value}"; // set window title
+                        this.Text = $"{RecommendationAppName} {value}";
                     }
                 }
             }
@@ -175,6 +218,477 @@ namespace osu_trainer
 
             OriginalBpmRangeTextBox.Font = new Font(comforta, 9, FontStyle.Bold);
             NewBpmRangeTextBox.Font = new Font(comforta, 9, FontStyle.Bold);
+
+            if (recommendationTagsLabel != null)
+            {
+                recommendationTagsLabel.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+                recommendationModsLabel.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+                recommendationDifficultiesLabel.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+                recommendationOutputLabel.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+
+                tagSearchTextBox.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+                tagCheckedListBox.Font = new Font(comforta, 8.25f, FontStyle.Bold);
+                modsComboBox.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+                difficultyCheckedListBox.Font = new Font(comforta, 8.25f, FontStyle.Bold);
+                recommendationOutputTextBox.Font = new Font(comforta, 8.25f, FontStyle.Bold);
+                copyRecommendationButton.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+                saveRecommendationButton.Font = new Font(comforta, 8.5f, FontStyle.Bold);
+            }
+        }
+
+        private void InitializeRecommendationUi()
+        {
+            recommendationMainPanel = new Panel
+            {
+                Dock = DockStyle.None,
+                Height = 360,
+                BackColor = Color.FromArgb(31, 29, 44),
+                Padding = new Padding(10, 10, 10, 6),
+                Name = "recommendationMainPanel"
+            };
+
+            var recommendationLayout = new TableLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                ColumnCount = 2,
+                RowCount = 5,
+                BackColor = Color.Transparent,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            recommendationLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 52f));
+            recommendationLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 48f));
+            recommendationLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48f));
+            recommendationLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 124f));
+            recommendationLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 28f));
+            recommendationLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 118f));
+            recommendationLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34f));
+
+            recommendationTagsLabel = CreateRecommendationLabel("Tags", new Point(0, 0), new Size(110, 18));
+            tagSearchTextBox = CreateRecommendationTextBox(new Point(0, 0), new Size(112, 23));
+            tagSearchTextBox.TextChanged += TagSearchTextBox_TextChanged;
+            tagSearchTextBox.Dock = DockStyle.Bottom;
+
+            tagCheckedListBox = CreateRecommendationCheckedListBox(new Point(0, 0), new Size(112, 164));
+            tagCheckedListBox.ItemCheck += TagCheckedListBox_ItemCheck;
+            tagCheckedListBox.Dock = DockStyle.Fill;
+
+            recommendationModsLabel = CreateRecommendationLabel("Mods", new Point(0, 0), new Size(60, 18));
+            modsComboBox = new ComboBox
+            {
+                Location = new Point(0, 0),
+                Size = new Size(135, 25),
+                DropDownStyle = ComboBoxStyle.DropDown,
+                BackColor = Colors.TextBoxBg,
+                ForeColor = Colors.TextBoxFg,
+                FlatStyle = FlatStyle.Flat
+            };
+            modsComboBox.Items.AddRange(new object[] { "", "NM", "HD", "HR", "DT", "HDHR", "HDDT", "EZ", "FL" });
+            modsComboBox.TextChanged += RecommendationSelectionChanged;
+            modsComboBox.Dock = DockStyle.Bottom;
+
+            recommendationDifficultiesLabel = CreateRecommendationLabel("Difficulties", new Point(0, 0), new Size(120, 18));
+            difficultyCheckedListBox = CreateRecommendationCheckedListBox(new Point(0, 0), new Size(135, 140));
+            difficultyCheckedListBox.ItemCheck += DifficultyCheckedListBox_ItemCheck;
+            difficultyCheckedListBox.Dock = DockStyle.Fill;
+
+            recommendationOutputLabel = CreateRecommendationLabel("Recommendation Output", new Point(0, 0), new Size(180, 18));
+            recommendationOutputTextBox = CreateRecommendationTextBox(new Point(0, 0), new Size(257, 50));
+            recommendationOutputTextBox.Multiline = true;
+            recommendationOutputTextBox.ReadOnly = true;
+            recommendationOutputTextBox.ScrollBars = ScrollBars.Vertical;
+            recommendationOutputTextBox.Dock = DockStyle.Fill;
+
+            copyRecommendationButton = CreateRecommendationButton("Copy", new Point(0, 0), new Size(65, 22));
+            copyRecommendationButton.Click += CopyRecommendationButton_Click;
+
+            saveRecommendationButton = CreateRecommendationButton("Save TXT", new Point(0, 0), new Size(78, 22));
+            saveRecommendationButton.Click += SaveRecommendationButton_Click;
+
+            var tagsHeaderPanel = CreateRecommendationSectionHeader(recommendationTagsLabel, tagSearchTextBox);
+            var diffHeaderPanel = CreateRecommendationSectionHeader(recommendationModsLabel, modsComboBox);
+            var outputHeaderPanel = CreateRecommendationSectionHeader(recommendationOutputLabel);
+            var actionPanel = new FlowLayoutPanel
+            {
+                Dock = DockStyle.Fill,
+                FlowDirection = FlowDirection.RightToLeft,
+                WrapContents = false,
+                BackColor = Color.Transparent,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty
+            };
+            actionPanel.Controls.Add(copyRecommendationButton);
+            actionPanel.Controls.Add(saveRecommendationButton);
+
+            recommendationLayout.Controls.Add(tagsHeaderPanel, 0, 0);
+            recommendationLayout.Controls.Add(diffHeaderPanel, 1, 0);
+            recommendationLayout.Controls.Add(tagCheckedListBox, 0, 1);
+            recommendationLayout.Controls.Add(difficultyCheckedListBox, 1, 1);
+            recommendationLayout.Controls.Add(outputHeaderPanel, 0, 2);
+            recommendationLayout.Controls.Add(recommendationOutputTextBox, 0, 3);
+            recommendationLayout.Controls.Add(actionPanel, 0, 4);
+            recommendationLayout.SetColumnSpan(outputHeaderPanel, 2);
+            recommendationLayout.SetColumnSpan(recommendationOutputTextBox, 2);
+            recommendationLayout.SetColumnSpan(actionPanel, 2);
+
+            recommendationMainPanel.Controls.Add(recommendationLayout);
+            Controls.Add(recommendationMainPanel);
+            ConfigureRecommendationModeLayout();
+
+            RefreshTagChecklist();
+            UpdateRecommendationOutput();
+        }
+
+        private Panel CreateRecommendationSectionHeader(params Control[] controls)
+        {
+            var panel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                Margin = Padding.Empty,
+                Padding = Padding.Empty,
+                BackColor = Color.Transparent
+            };
+
+            int top = 0;
+            foreach (var control in controls)
+            {
+                control.Location = new Point(0, top);
+                control.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+                panel.Controls.Add(control);
+                top += control.Height + 4;
+            }
+
+            return panel;
+        }
+
+        private Label CreateRecommendationLabel(string text, Point location, Size size)
+        {
+            return new Label
+            {
+                Text = text,
+                Location = location,
+                Size = size,
+                ForeColor = Colors.PaleBlue,
+                BackColor = Color.Transparent,
+                TextAlign = ContentAlignment.MiddleLeft
+            };
+        }
+
+        private TextBox CreateRecommendationTextBox(Point location, Size size)
+        {
+            return new TextBox
+            {
+                Location = location,
+                Size = size,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = Colors.TextBoxBg,
+                ForeColor = Colors.TextBoxFg
+            };
+        }
+
+        private CheckedListBox CreateRecommendationCheckedListBox(Point location, Size size)
+        {
+            return new CheckedListBox
+            {
+                Location = location,
+                Size = size,
+                BorderStyle = BorderStyle.FixedSingle,
+                CheckOnClick = true,
+                BackColor = Colors.TextBoxBg,
+                ForeColor = Colors.TextBoxFg
+            };
+        }
+
+        private Button CreateRecommendationButton(string text, Point location, Size size)
+        {
+            var button = new Button
+            {
+                Text = text,
+                Location = location,
+                Size = size,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Colors.TextBoxBg,
+                ForeColor = Colors.PaleBlue
+            };
+            button.FlatAppearance.BorderColor = Colors.PaleBlue;
+            return button;
+        }
+
+        private void ConfigureRecommendationModeLayout()
+        {
+            Middle1Panel.Visible = false;
+            middlePanel.Visible = false;
+            extrasPanel.Visible = false;
+            showExtrasButton.Visible = false;
+
+            Middle1Panel.Height = 0;
+            middlePanel.Height = 0;
+            extrasPanel.Height = 0;
+
+            ResetButton.Visible = false;
+            GenerateMapButton.Text = "Copy Output";
+            GenerateMapButton.Subtext = "";
+            GenerateMapButton.TextYOffset = 0;
+            GenerateMapButton.Enabled = true;
+            GenerateMapButton.ForeColor = Color.White;
+            GenerateMapButton.Color = Colors.AccentPink2;
+            GenerateMapButton.Width = 407;
+            GenerateMapButton.Location = new Point(10, 37);
+
+            recommendationMainPanel.Width = ClientSize.Width;
+            recommendationMainPanel.Location = new Point(0, TopPanel.Bottom);
+            recommendationMainPanel.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Right;
+
+            BottomPanel.Height = 111;
+            ClientSize = new Size(427, 622);
+            titlePanel.BringToFront();
+            TopPanel.BringToFront();
+            recommendationMainPanel.BringToFront();
+            BottomPanel.BringToFront();
+        }
+
+        private bool IsRecommendationMode()
+        {
+            return recommendationMainPanel != null;
+        }
+
+        private void RefreshTagChecklist()
+        {
+            if (tagCheckedListBox == null)
+                return;
+
+            string filter = tagSearchTextBox?.Text?.Trim() ?? "";
+            var filteredTags = RecommendationTags
+                .Where(tag => filter.Length == 0 || tag.IndexOf(filter, StringComparison.OrdinalIgnoreCase) >= 0)
+                .ToList();
+
+            tagCheckedListBox.Items.Clear();
+            foreach (var tag in filteredTags)
+            {
+                int index = tagCheckedListBox.Items.Add(tag);
+                if (selectedRecommendationTags.Contains(tag))
+                    tagCheckedListBox.SetItemChecked(index, true);
+            }
+        }
+
+        private void LoadDifficultyOptions()
+        {
+            recommendationDifficultyOptions.Clear();
+            difficultyCheckedListBox.Items.Clear();
+            selectedRecommendationDifficulties.Clear();
+
+            if (editor.State == EditorState.NOT_READY || editor.OriginalBeatmap == null)
+            {
+                UpdateRecommendationOutput();
+                return;
+            }
+
+            string currentFile = editor.OriginalBeatmap.Filename;
+            string beatmapDirectory = Path.GetDirectoryName(currentFile);
+            if (string.IsNullOrWhiteSpace(beatmapDirectory) || !Directory.Exists(beatmapDirectory))
+            {
+                UpdateRecommendationOutput();
+                return;
+            }
+
+            foreach (string beatmapPath in Directory.GetFiles(beatmapDirectory, "*.osu"))
+            {
+                if (!TryReadRecommendationDifficulty(beatmapPath, out RecommendationDifficultyOption option))
+                    continue;
+
+                recommendationDifficultyOptions.Add(option);
+            }
+
+            recommendationDifficultyOptions = recommendationDifficultyOptions
+                .OrderBy(option => option.DisplayName, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            foreach (var option in recommendationDifficultyOptions)
+            {
+                int index = difficultyCheckedListBox.Items.Add(option.DisplayName);
+                if (string.Equals(option.FilePath, currentFile, StringComparison.OrdinalIgnoreCase))
+                {
+                    difficultyCheckedListBox.SetItemChecked(index, true);
+                    selectedRecommendationDifficulties.Add(option.FilePath);
+                }
+            }
+
+            UpdateRecommendationOutput();
+        }
+
+        private bool TryReadRecommendationDifficulty(string beatmapPath, out RecommendationDifficultyOption option)
+        {
+            option = null;
+
+            try
+            {
+                string[] lines = File.ReadAllLines(beatmapPath);
+                string version = ReadBeatmapValue(lines, "Version");
+                string beatmapIdText = ReadBeatmapValue(lines, "BeatmapID");
+                string beatmapSetIdText = ReadBeatmapValue(lines, "BeatmapSetID");
+                string modeText = ReadBeatmapValue(lines, "Mode");
+
+                if (!int.TryParse(beatmapIdText, out int beatmapId) || beatmapId <= 0)
+                    return false;
+                if (!int.TryParse(beatmapSetIdText, out int beatmapSetId) || beatmapSetId <= 0)
+                    return false;
+
+                option = new RecommendationDifficultyOption
+                {
+                    FilePath = beatmapPath,
+                    DisplayName = string.IsNullOrWhiteSpace(version) ? Path.GetFileNameWithoutExtension(beatmapPath) : version.Trim(),
+                    BeatmapId = beatmapId,
+                    BeatmapSetId = beatmapSetId,
+                    ModeSegment = GetModeSegment(modeText)
+                };
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private string ReadBeatmapValue(IEnumerable<string> lines, string key)
+        {
+            foreach (string line in lines)
+            {
+                if (!line.StartsWith(key + ":", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                return line.Substring(key.Length + 1).Trim();
+            }
+            return "";
+        }
+
+        private string GetModeSegment(string modeText)
+        {
+            switch (modeText)
+            {
+                case "1":
+                    return "taiko";
+                case "2":
+                    return "fruits";
+                case "3":
+                    return "mania";
+                default:
+                    return "osu";
+            }
+        }
+
+        private void UpdateRecommendationOutput()
+        {
+            if (recommendationOutputTextBox == null)
+                return;
+
+            recommendationOutputTextBox.Text = BuildRecommendationOutput();
+            bool canExport = recommendationOutputTextBox.TextLength > 0;
+            copyRecommendationButton.Enabled = canExport;
+            saveRecommendationButton.Enabled = false;
+            copyRecommendationButton.ForeColor = canExport ? Color.White : Colors.Disabled;
+            saveRecommendationButton.ForeColor = Colors.Disabled;
+            if (IsRecommendationMode())
+            {
+                GenerateMapButton.Enabled = canExport;
+                GenerateMapButton.ForeColor = canExport ? Color.White : Colors.Disabled;
+                GenerateMapButton.Color = canExport ? Colors.AccentPink2 : Colors.TextBoxBg;
+            }
+        }
+
+        private string BuildRecommendationOutput()
+        {
+            if (editor == null || editor.State == EditorState.NOT_READY)
+                return "";
+
+            var selectedDifficulties = recommendationDifficultyOptions
+                .Where(option => selectedRecommendationDifficulties.Contains(option.FilePath))
+                .ToList();
+
+            if (selectedDifficulties.Count == 0 || selectedRecommendationTags.Count == 0)
+                return "";
+
+            string modsText = (modsComboBox?.Text ?? "").Trim().ToUpperInvariant();
+            string skillsets = string.Join(", ", RecommendationTags.Where(tag => selectedRecommendationTags.Contains(tag)));
+
+            var builder = new StringBuilder();
+            for (int i = 0; i < selectedDifficulties.Count; i++)
+            {
+                RecommendationDifficultyOption option = selectedDifficulties[i];
+                builder.Append($"https://osu.ppy.sh/beatmapsets/{option.BeatmapSetId}#{option.ModeSegment}/{option.BeatmapId} ({option.DisplayName})");
+                if (!string.IsNullOrWhiteSpace(modsText) && modsText != "NM")
+                    builder.Append($" +{modsText}");
+                builder.AppendLine();
+                builder.Append($"skillsets: {skillsets}");
+
+                if (i < selectedDifficulties.Count - 1)
+                    builder.AppendLine().AppendLine();
+            }
+
+            return builder.ToString();
+        }
+
+        private void RecommendationSelectionChanged(object sender, EventArgs e)
+        {
+            UpdateRecommendationOutput();
+        }
+
+        private void TagSearchTextBox_TextChanged(object sender, EventArgs e)
+        {
+            RefreshTagChecklist();
+        }
+
+        private void TagCheckedListBox_ItemCheck(object sender, ItemCheckEventArgs e)
+        {
+            string tag = tagCheckedListBox.Items[e.Index].ToString();
+            BeginInvoke((Action)(() =>
+            {
+                if (e.NewValue == CheckState.Checked)
+                    selectedRecommendationTags.Add(tag);
+                else
+                    selectedRecommendationTags.Remove(tag);
+                UpdateRecommendationOutput();
+            }));
+        }
+
+        private void DifficultyCheckedListBox_ItemCheck(object sender, ItemCheckEventArgs e)
+        {
+            if (e.Index < 0 || e.Index >= recommendationDifficultyOptions.Count)
+                return;
+
+            RecommendationDifficultyOption option = recommendationDifficultyOptions[e.Index];
+            BeginInvoke((Action)(() =>
+            {
+                if (e.NewValue == CheckState.Checked)
+                    selectedRecommendationDifficulties.Add(option.FilePath);
+                else
+                    selectedRecommendationDifficulties.Remove(option.FilePath);
+                UpdateRecommendationOutput();
+            }));
+        }
+
+        private void CopyRecommendationButton_Click(object sender, EventArgs e)
+        {
+            string output = BuildRecommendationOutput();
+            if (string.IsNullOrWhiteSpace(output))
+            {
+                MessageBox.Show("Select at least one tag and one difficulty first.", "Recommendation Output");
+                return;
+            }
+
+            Clipboard.SetText(output);
+        }
+
+        private void SaveRecommendationButton_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show("Save TXT is temporarily unavailable.", RecommendationAppName);
+        }
+
+        private sealed class RecommendationDifficultyOption
+        {
+            public string FilePath { get; set; }
+            public string DisplayName { get; set; }
+            public int BeatmapId { get; set; }
+            public int BeatmapSetId { get; set; }
+            public string ModeSegment { get; set; }
         }
 
 #region Callbacks for updating GUI controls
@@ -189,6 +703,11 @@ namespace osu_trainer
             switch (editor.State)
             {
                 case EditorState.NOT_READY:
+                    recommendationDifficultyOptions.Clear();
+                    difficultyCheckedListBox.Items.Clear();
+                    selectedRecommendationDifficulties.Clear();
+                    UpdateRecommendationOutput();
+
                     switch (editor.NotReadyReason)
                     {
                         case BadBeatmapReason.NO_BEATMAP_LOADED:
@@ -219,6 +738,7 @@ namespace osu_trainer
                     SongDisplay.Title = editor.OriginalBeatmap.Title;
                     SongDisplay.Difficulty = editor.OriginalBeatmap.Version;
                     SongDisplay.Cover = GetSongBackground(editor.NewBeatmap);
+                    LoadDifficultyOptions();
                     break;
             }
         }
@@ -543,6 +1063,12 @@ namespace osu_trainer
 
         private void TogglePrettyButtons(object sender, EventArgs e)
         {
+            if (IsRecommendationMode())
+            {
+                SongsFolderButton.Visible = editor.State == EditorState.NOT_READY;
+                return;
+            }
+
             bool enabled = false;
             switch (editor.State)
             {
@@ -657,6 +1183,12 @@ namespace osu_trainer
 
         private void GenerateMapButton_Click(object sender, EventArgs e)
         {
+            if (IsRecommendationMode())
+            {
+                CopyRecommendationButton_Click(sender, e);
+                return;
+            }
+
             if ( !Properties.Settings.Default.HighARODMessageShown && (editor.NewBeatmap.ApproachRate > 10M || editor.NewBeatmap.ApproachRate > 10M) )
             {
                 MessageBox.Show("You have chosen an AR or OD greater than 10. After this map gets created, make sure to play it with Doubletime.", "Note");
@@ -982,6 +1514,12 @@ namespace osu_trainer
 
         private void RearrangeLayout(object sender, EventArgs e)
         {
+            if (IsRecommendationMode())
+            {
+                Height = 640;
+                return;
+            }
+
             bool profilesVisible = (editor.State == EditorState.NOT_READY) ? false : true;
             bool extrasVisible = profilesVisible;
             if (!profilesVisible)

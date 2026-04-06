@@ -1,17 +1,8 @@
-# osu-trainer
-A program that allows you to modify the difficulty of a beatmap **very quickly and easily**.
-
-![](osu-trainer/images/gui.png)
+# osu map recommendations
+This is forked from [Funorange's osu! trainer](https://github.com/FunOrange/osu-trainer) ot make the map recommendation quicker.
 
 # Download
-https://github.com/FunOrange/osu-trainer/releases/latest
-
-### Additional Notes
-+ Maps can be created without alt tabbing if you make good use of the profiles and hotkeys
-+ Search "osutrainer" in osu! to find all your generated maps
-+ If you use this application a lot, you can end up using a lot of disk space. (333 mp3s * 3MB/mp3 = 1GB). To free up this space, delete the generated maps in osu, then click the Clean Up button in osu trainer.
-
-Special thanks to [Craftplacer](https://github.com/Craftplacer) for making the UI really nice and pretty
+https://github.com/hyeok2044/osu-map-recs/releases/latest
 
 ## Licenses
 This project uses the following projects:
